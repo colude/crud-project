@@ -5,6 +5,7 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.junit.Assert.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -45,7 +46,6 @@ import com.springboot.crud.plasse.repository.EmployeeRepository;
 public class EmployeeControllerIT {
 
 	private static final String DEFAULT_USERNAME = "AAAAAAAAAA";
-	private static final String UPDATED_USERNAME = "BBBBBBBBBB";
 
 	private static final LocalDate DEFAULT_BIRTH_DATE= LocalDate.of(1990, 1, 1);
 	private static final LocalDate UPDATED_BIRTH_DATE= LocalDate.of(1991, 1, 1);
@@ -110,13 +110,25 @@ public class EmployeeControllerIT {
 		return employeeDto;
 	}
 	
+	public static EmployeeDto updateDto() {
+		EmployeeDto employeeDto = EmployeeDto.builder()
+				.id(1L)
+				.userName(DEFAULT_USERNAME)
+				.birthDate(UPDATED_BIRTH_DATE_STR)
+				.country(UPDATED_COUNTRY)
+				.phoneNumber(UPDATED_PHONE_NUMBER)
+				.gender(UPDATED_GENDER.toString())
+				.build();
+		return employeeDto;
+	}
+	
+	
 	@Test
 	@Transactional
 	public void shouldGetNoData() throws Exception {
 		employeeRepository.flush();
 
-		restEmployeeMockMvc
-				.perform(get(ENTITY_API_URL )).andExpect(status().isNotFound());
+		restEmployeeMockMvc.perform(get(ENTITY_API_URL )).andExpect(status().isNotFound());
 	}
 	
 	@Test
@@ -129,7 +141,7 @@ public class EmployeeControllerIT {
 		restEmployeeMockMvc
 		.perform(get(ENTITY_API_URL ))
 		.andExpect(status().isOk())
-		.andExpect(jsonPath("$[0].id").value(1L))
+		.andExpect(jsonPath("$[0].id").value(2L))
 		.andExpect(jsonPath("$[0].userName").value(DEFAULT_USERNAME))
 		.andExpect(jsonPath("$[0].birthDate").value(DEFAULT_BIRTH_DATE.toString()))
 		.andExpect(jsonPath("$[0].country").value(DEFAULT_COUNTRY))
@@ -177,6 +189,8 @@ public class EmployeeControllerIT {
         employeeRepository.saveAndFlush(employee);
         
         int databaseSizeBeforeUpdate = employeeRepository.findAll().size();
+        
+        this.employeeDto = updateDto();
 
 		restEmployeeMockMvc
 				.perform(post(ENTITY_API_URL_SAVE).contentType(MediaType.APPLICATION_JSON).content(TestUtil.convertObjectToJsonBytes(this.employeeDto)))
@@ -187,10 +201,10 @@ public class EmployeeControllerIT {
         assertThat(employeeList).hasSize(databaseSizeBeforeUpdate);
         Employee testEmployee = employeeList.get(employeeList.size() - 1);
         assertThat(testEmployee.getUserName()).isEqualTo(DEFAULT_USERNAME);
-        assertThat(testEmployee.getBirthDate()).isEqualTo(DEFAULT_BIRTH_DATE);
-        assertThat(testEmployee.getCountry()).isEqualTo(DEFAULT_COUNTRY);
-        assertThat(testEmployee.getPhoneNumber()).isEqualTo(DEFAULT_PHONE_NUMBER);
-        assertThat(testEmployee.getGender()).isEqualTo(DEFAULT_GENDER);
+        assertThat(testEmployee.getBirthDate()).isEqualTo(UPDATED_BIRTH_DATE);
+        assertThat(testEmployee.getCountry()).isEqualTo(UPDATED_COUNTRY);
+        assertThat(testEmployee.getPhoneNumber()).isEqualTo(UPDATED_PHONE_NUMBER);
+        assertThat(testEmployee.getGender()).isEqualTo(UPDATED_GENDER);
 	}
 	
 	@Test
@@ -345,6 +359,23 @@ public class EmployeeControllerIT {
 		assertThat(apiException.getErrors().get("gender")).isEqualTo("values accepted for Enum class:  MALE or FEMALE");
 		assertThat(apiException.getErrors().get("country")).isEqualTo("must be french");
 	}
-
-
+	
+	@Test
+	@Transactional
+	void shouldDeleteUnknownEmployee() throws Exception {	
+		MvcResult result = restEmployeeMockMvc
+		.perform(delete(ENTITY_API_URL + "/" + DEFAULT_USERNAME )).andExpect(status().is4xxClientError()).andReturn();
+		
+		assertThat(result.getResponse().getStatus()).isEqualTo(404);
+	}
+	
+	@Test
+	@Transactional
+	void shouldDeleteEmployee() throws Exception {	
+		createEmployee();
+		MvcResult result = restEmployeeMockMvc
+		.perform(delete(ENTITY_API_URL + "/" + DEFAULT_USERNAME )).andExpect(status().is2xxSuccessful()).andReturn();
+		
+		assertThat(result.getResponse().getStatus()).isEqualTo(204);
+	}
 }

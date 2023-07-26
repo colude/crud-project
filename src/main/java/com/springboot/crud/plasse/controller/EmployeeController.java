@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.springboot.crud.plasse.advice.annotation.TrackExecutionTime;
@@ -98,6 +99,7 @@ public class EmployeeController {
 			@ApiResponse(code = 202, message = "An employee has been updated successfully"),
 			@ApiResponse(code = 500, message = "Internal Server Error") 
 	})
+	@ResponseStatus(value = HttpStatus.CREATED)
 	public ResponseEntity<Employee> saveEmployee(@Valid @RequestBody EmployeeDto employeeUpdate) {	
 		try {
 			Employee employeeToSave = modelMapper.map(employeeUpdate, Employee.class);	
@@ -131,6 +133,7 @@ public class EmployeeController {
 			@ApiResponse(code = 500, message = "Internal Server Error")
 
 	})
+	@ResponseStatus(value = HttpStatus.NO_CONTENT)
 	public ResponseEntity<Employee> deleteEmployee(@PathVariable String userName) {
 		try {
 			Optional<Employee> employeeData = employeeService.findByUserName(userName);

@@ -3,6 +3,7 @@ package com.springboot.crud.plasse.controller;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import javax.validation.Valid;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.springboot.crud.plasse.advice.annotation.TrackExecutionTime;
 import com.springboot.crud.plasse.advice.annotation.TrackLoggerTime;
 import com.springboot.crud.plasse.entity.Employee;
+import com.springboot.crud.plasse.exception.ApiRequestException;
 import com.springboot.crud.plasse.exception.UserNotFoundException;
 import com.springboot.crud.plasse.model.EmployeeDto;
 import com.springboot.crud.plasse.service.EmployeeService;
@@ -89,38 +92,60 @@ public class EmployeeController {
 		return employeeData.map(response -> ResponseEntity.ok().body(employeeData.get()))
 				.orElseThrow(() -> new UserNotFoundException("User with userName " + userName + " was not found"));
 	}
-
+	
+	@PutMapping("/update/{id}")
+	@TrackExecutionTime
+	@TrackLoggerTime
+	@ApiOperation(value = "To update an employee by passing an EmployeeDto")
+	@ApiResponses(value = {
+			@ApiResponse(code = 202, message = "An employee has been updated successfully")
+	})
+	@ResponseStatus(value = HttpStatus.ACCEPTED)
+	public ResponseEntity<Employee> updateEmployee(
+			@PathVariable(value = "id", required = false) final Long id,
+			@Valid @RequestBody EmployeeDto employeeUpdate) {	
+		if(employeeUpdate.getId() == null) {
+			throw new ApiRequestException("id cannot be null");
+		}
+		if (!Objects.equals(id, employeeUpdate.getId())) {
+            throw new ApiRequestException("ids don't match");
+        }
+		if(!employeeService.findById(employeeUpdate.getId()).isPresent()) {
+			throw new ApiRequestException("entity not found");
+		}
+			
+		Employee employeeToSave = modelMapper.map(employeeUpdate, Employee.class);	
+		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+		LocalDate birthDate = LocalDate.parse(employeeUpdate.getBirthDate(), formatter);
+		employeeToSave.setBirthDate(birthDate);
+		employeeToSave = employeeService.saveEmployee(employeeToSave);
+		return ResponseEntity.status(HttpStatus.ACCEPTED).body(employeeToSave);
+	}
+	
 	@PostMapping("/save")
 	@TrackExecutionTime
 	@TrackLoggerTime
-	@ApiOperation(value = "To create or update an employee by passing an EmployeeDto")
+	@ApiOperation(value = "To create an employee by passing an EmployeeDto")
 	@ApiResponses(value = {
-			@ApiResponse(code = 201, message = "A new employee has been created successfully"),
-			@ApiResponse(code = 202, message = "An employee has been updated successfully"),
-			@ApiResponse(code = 500, message = "Internal Server Error") 
+			@ApiResponse(code = 201, message = "A new employee has been created successfully")
 	})
 	@ResponseStatus(value = HttpStatus.CREATED)
 	public ResponseEntity<Employee> saveEmployee(@Valid @RequestBody EmployeeDto employeeUpdate) {	
-		try {
-			Employee employeeToSave = modelMapper.map(employeeUpdate, Employee.class);	
-			
-			DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-			LocalDate birthDate = LocalDate.parse(employeeUpdate.getBirthDate(), formatter);
-				
-			Optional<Employee> employeeData = employeeService.findByUserName(employeeUpdate.getUserName());
-			employeeToSave.setBirthDate(birthDate);
-
-			if (employeeData.isPresent()) {
-				employeeToSave.setId(employeeData.get().getId());
-				employeeToSave = employeeService.saveEmployee(employeeToSave);
-				return ResponseEntity.status(HttpStatus.ACCEPTED).body(employeeToSave);
-			} else {
-				employeeToSave = employeeService.saveEmployee(employeeToSave);
-				return ResponseEntity.status(HttpStatus.CREATED).body(employeeToSave);
-			}	
-		} catch (Exception e) {
-			return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+		if (employeeUpdate.getId() != null) {
+			throw new ApiRequestException("A new employee cannot already have an ID");
 		}
+		Employee employeeToSave = modelMapper.map(employeeUpdate, Employee.class);	
+
+		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+		LocalDate birthDate = LocalDate.parse(employeeUpdate.getBirthDate(), formatter);
+		employeeToSave.setBirthDate(birthDate);
+
+		if (employeeService.findByUserName(employeeToSave.getUserName()).isPresent()) {
+			return new ResponseEntity<>(HttpStatus.CONFLICT);
+		} else {
+			employeeToSave = employeeService.saveEmployee(employeeToSave);
+			return ResponseEntity.status(HttpStatus.CREATED).body(employeeToSave);
+		}	
 	}
 	
 	@DeleteMapping("/{userName}")

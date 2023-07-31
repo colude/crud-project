@@ -9,6 +9,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.NoHandlerFoundException;
 
 import javax.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
@@ -27,24 +28,29 @@ public class ApiExceptionHandler {
 	private static final int CODE_HTTP_404 = 404;
 	private static final int CODE_HTTP_405 = 405;
 
+	@ExceptionHandler(NoHandlerFoundException.class)
+	public ResponseEntity<Object> handleNoHandlerFound(NoHandlerFoundException e, WebRequest request) {
+		return handleAnyException(CODE_HTTP_404, NOT_FOUND, e);
+	}
+
 	@ExceptionHandler(HttpRequestMethodNotSupportedException.class)
 	public ResponseEntity<Object> handleError405(HttpServletRequest request, Exception e) {
-		Map<String, String> errors = Collections.singletonMap( "message" , e.getMessage());
-		ApiException apiException = new ApiException(CODE_HTTP_405, HttpStatus.METHOD_NOT_ALLOWED, errors, LocalDateTime.now());
-		return new ResponseEntity<>(apiException, METHOD_NOT_ALLOWED);
+		return handleAnyException(CODE_HTTP_405, METHOD_NOT_ALLOWED, e);
 	}
 
 	@ExceptionHandler(value = {UserNotFoundException.class})
-	public ResponseEntity<Object> handleUserNotFoundException(UserNotFoundException e, WebRequest request) {	
-		Map<String, String> errors = Collections.singletonMap( "message" , e.getMessage());
-		ApiException apiException = new ApiException(CODE_HTTP_404, HttpStatus.NOT_FOUND, errors, LocalDateTime.now());
-		return new ResponseEntity<>(apiException, NOT_FOUND);
+	public ResponseEntity<Object> handleUserNotFoundException(UserNotFoundException e, WebRequest request) {
+		return handleAnyException(CODE_HTTP_404, NOT_FOUND, e);
 	}
 	
 	@ExceptionHandler(value = {ApiRequestException.class})
-	public ResponseEntity<Object> handleApiRequestException(ApiRequestException e, WebRequest request) {	
-		Map<String, String> errors = Collections.singletonMap("message", e.getMessage());
-		ApiException apiException = new ApiException(CODE_HTTP_400, BAD_REQUEST, errors, LocalDateTime.now());
-		return new ResponseEntity<>(apiException, BAD_REQUEST);
+	public ResponseEntity<Object> handleApiRequestException(ApiRequestException e, WebRequest request) {
+		return handleAnyException(CODE_HTTP_400, BAD_REQUEST, e);
+	}
+
+	public ResponseEntity<Object> handleAnyException(int code, HttpStatus httpStatus, Exception e) {
+		Map<String, String> errors = Collections.singletonMap( "message" , e.getMessage());
+		ApiException apiException = new ApiException(code, httpStatus, errors, LocalDateTime.now());
+		return new ResponseEntity<>(apiException, httpStatus);
 	}
 }

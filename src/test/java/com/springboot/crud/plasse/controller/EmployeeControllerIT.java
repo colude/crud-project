@@ -5,9 +5,7 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.junit.Assert.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,6 +17,7 @@ import javax.persistence.EntityManager;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.HttpStatus;
@@ -46,6 +45,7 @@ import com.springboot.crud.plasse.repository.EmployeeRepository;
 public class EmployeeControllerIT {
 
 	private static final String DEFAULT_USERNAME = "AAAAAAAAAA";
+	private static final String UPDATED_USERNAME = "BBBBBBBBBB";
 
 	private static final LocalDate DEFAULT_BIRTH_DATE= LocalDate.of(1990, 1, 1);
 	private static final LocalDate UPDATED_BIRTH_DATE= LocalDate.of(1991, 1, 1);
@@ -65,6 +65,9 @@ public class EmployeeControllerIT {
 	private static final String ENTITY_API_URL = "/api/v1/users";
 	private static final String ENTITY_API_URL_SAVE = "/api/v1/users/save";
 
+	private static final String ENTITY_API_URL_UPDATE = "/api/v1/users/update";
+	private static final String ENTITY_API_URL_UPDATE_ID = "/api/v1/users/update" + "/{id}";
+
 	@Autowired
 	private EmployeeRepository employeeRepository;
 
@@ -79,15 +82,17 @@ public class EmployeeControllerIT {
 	private EmployeeDto employeeDto;
 	
 	private ObjectMapper objectMapper;
-    
+
+	private ModelMapper modelMapper = new ModelMapper();
+
 	@BeforeEach
 	public void initTest() {
-		this.employee = createEntity(this.em);
+		this.employee = createEntity();
 		this.employeeDto = createDto();
 		this.objectMapper = TestUtil.createObjectMapper();
 	}
 
-	public static Employee createEntity(EntityManager em) {
+	public static Employee createEntity() {
 		Employee employee = Employee.builder()
 				.userName(DEFAULT_USERNAME)
 				.birthDate(DEFAULT_BIRTH_DATE)
@@ -100,7 +105,6 @@ public class EmployeeControllerIT {
 	
 	public static EmployeeDto createDto() {
 		EmployeeDto employeeDto = EmployeeDto.builder()
-				.id(1L)
 				.userName(DEFAULT_USERNAME)
 				.birthDate(DEFAULT_BIRTH_DATE_STR)
 				.country(DEFAULT_COUNTRY)
@@ -134,10 +138,9 @@ public class EmployeeControllerIT {
 	@Test
 	@Transactional
 	void getEmployees() throws Exception {	
-		employeeRepository.flush();
+		// Initialize the database
+		employeeRepository.saveAndFlush(employee);
 
-		createEmployee();
-	
 		restEmployeeMockMvc
 		.perform(get(ENTITY_API_URL ))
 		.andExpect(status().isOk())
@@ -176,35 +179,134 @@ public class EmployeeControllerIT {
 	@Test
 	@Transactional
 	void createEmployee() throws Exception {
-		employeeRepository.flush();
-	
 		restEmployeeMockMvc
 				.perform(post(ENTITY_API_URL_SAVE).contentType(MediaType.APPLICATION_JSON).content(TestUtil.convertObjectToJsonBytes(this.employeeDto)))
 				.andExpect(status().isCreated());
+	}
+
+	@Test
+	@Transactional
+	void createEmployeeWithConflict() throws Exception {
+		createEmployee();
+
+		MvcResult result  = restEmployeeMockMvc
+				.perform(post(ENTITY_API_URL_SAVE).contentType(MediaType.APPLICATION_JSON).content(TestUtil.convertObjectToJsonBytes(this.employeeDto)))
+				.andReturn();
+
+		assertThat(result.getResponse().getStatus()).isEqualTo(409);
 	}
 	
 	@Test
 	@Transactional
 	void updateEmployee() throws Exception {
-        employeeRepository.saveAndFlush(employee);
-        
-        int databaseSizeBeforeUpdate = employeeRepository.findAll().size();
-        
-        this.employeeDto = updateDto();
+		// Initialize the database
+		employeeRepository.saveAndFlush(employee);
+
+		int databaseSizeBeforeUpdate = employeeRepository.findAll().size();
+		// Update the employee
+		Employee updatedEmployee = employeeRepository.findById(employee.getId()).get();
+
+		// Disconnect from session so that the updates on updatedEmployee are not directly saved in db
+		em.detach(updatedEmployee);
+		updatedEmployee = Employee.builder()
+				.id(employee.getId()) // le builder reinit le id à null ...
+				.userName(UPDATED_USERNAME)
+				.birthDate(UPDATED_BIRTH_DATE)
+				.country(UPDATED_COUNTRY)
+				.phoneNumber(UPDATED_PHONE_NUMBER)
+				.gender(UPDATED_GENDER)
+				.build();
+		EmployeeDto employeeToSave = modelMapper.map(updatedEmployee, EmployeeDto.class);
 
 		restEmployeeMockMvc
-				.perform(post(ENTITY_API_URL_SAVE).contentType(MediaType.APPLICATION_JSON).content(TestUtil.convertObjectToJsonBytes(this.employeeDto)))
+				.perform(put(ENTITY_API_URL_UPDATE_ID , employeeToSave.getId()).contentType(MediaType.APPLICATION_JSON)
+						.content(TestUtil.convertObjectToJsonBytes(employeeToSave)))
 				.andExpect(status().isAccepted());
-		
+
 		 // Validate the Employee in the database
         List<Employee> employeeList = employeeRepository.findAll();
         assertThat(employeeList).hasSize(databaseSizeBeforeUpdate);
         Employee testEmployee = employeeList.get(employeeList.size() - 1);
-        assertThat(testEmployee.getUserName()).isEqualTo(DEFAULT_USERNAME);
+        assertThat(testEmployee.getUserName()).isEqualTo(UPDATED_USERNAME);
         assertThat(testEmployee.getBirthDate()).isEqualTo(UPDATED_BIRTH_DATE);
         assertThat(testEmployee.getCountry()).isEqualTo(UPDATED_COUNTRY);
         assertThat(testEmployee.getPhoneNumber()).isEqualTo(UPDATED_PHONE_NUMBER);
         assertThat(testEmployee.getGender()).isEqualTo(UPDATED_GENDER);
+	}
+
+	@Test
+	@Transactional
+	void updateEmployeeWithNoId() throws Exception {
+		employeeRepository.saveAndFlush(employee);
+
+		this.employeeDto = updateDto();
+		this.employeeDto.setId(null);
+
+		MvcResult result = restEmployeeMockMvc
+				.perform(put(ENTITY_API_URL_UPDATE + "/1").contentType(MediaType.APPLICATION_JSON).content(TestUtil.convertObjectToJsonBytes(this.employeeDto)))
+				.andReturn();
+
+		String response = result.getResponse().getContentAsString();
+
+		ApiException apiException = this.objectMapper.readValue(response, ApiException.class);
+		assertThat(apiException.getCode()).isEqualTo(400);
+		assertThat(apiException.getHttpStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+		assertThat(apiException.getErrors().entrySet().stream().findFirst().get().getValue()).isEqualTo("id cannot be null");
+	}
+
+	@Test
+	@Transactional
+	void updateEmployeeWithIdMismatch() throws Exception {
+		employeeRepository.saveAndFlush(employee);
+
+		this.employeeDto = updateDto();
+
+		MvcResult result = restEmployeeMockMvc
+				.perform(put(ENTITY_API_URL_UPDATE + "/99").contentType(MediaType.APPLICATION_JSON).content(TestUtil.convertObjectToJsonBytes(this.employeeDto)))
+				.andReturn();
+
+		String response = result.getResponse().getContentAsString();
+
+		ApiException apiException = this.objectMapper.readValue(response, ApiException.class);
+		assertThat(apiException.getCode()).isEqualTo(400);
+		assertThat(apiException.getHttpStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+		assertThat(apiException.getErrors().entrySet().stream().findFirst().get().getValue()).isEqualTo("ids don't match");
+	}
+
+	@Test
+	@Transactional
+	void updateEmployeeWithMissingIdPathParam() throws Exception {
+		int databaseSizeBeforeUpdate = employeeRepository.findAll().size();
+		this.employeeDto = updateDto();
+
+		//Request method 'PUT' not supported because /{id} is missing in the URI
+		restEmployeeMockMvc
+				.perform(put(ENTITY_API_URL_UPDATE).contentType(MediaType.APPLICATION_JSON).content(TestUtil.convertObjectToJsonBytes(this.employeeDto)))
+				.andExpect(status().isMethodNotAllowed()); //405
+
+		// Validate the Employee in the database
+		List<Employee> employeeList = employeeRepository.findAll();
+		assertThat(employeeList).hasSize(databaseSizeBeforeUpdate);
+	}
+
+	@Test
+	@Transactional
+	void updateEmployeeWithEntityNotFound() throws Exception {
+		employeeRepository.saveAndFlush(employee);
+
+		this.employeeDto = updateDto();
+		this.employeeDto.setUserName("charlie");
+
+		MvcResult result = restEmployeeMockMvc
+				.perform(put(ENTITY_API_URL_UPDATE + "/1").contentType(MediaType.APPLICATION_JSON).content(TestUtil.convertObjectToJsonBytes(this.employeeDto)))
+				.andReturn();
+
+		String response = result.getResponse().getContentAsString();
+
+		ApiException apiException = this.objectMapper.readValue(response, ApiException.class);
+		assertThat(apiException.getCode()).isEqualTo(400);
+		assertThat(apiException.getHttpStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+		assertThat(apiException.getErrors().entrySet().stream().findFirst().get().getValue()).isEqualTo("entity not found");
 	}
 	
 	@Test
@@ -371,8 +473,8 @@ public class EmployeeControllerIT {
 	
 	@Test
 	@Transactional
-	void shouldDeleteEmployee() throws Exception {	
-		createEmployee();
+	void shouldDeleteEmployee() throws Exception {
+		employeeRepository.saveAndFlush(employee);
 		MvcResult result = restEmployeeMockMvc
 		.perform(delete(ENTITY_API_URL + "/" + DEFAULT_USERNAME )).andExpect(status().is2xxSuccessful()).andReturn();
 		

@@ -5,7 +5,8 @@ This API exposes five services:
 •  one that displays the details of all users  
 •  one that displays the details of a registered user by id   
 •  one that displays the details of a registered user by username  
-•  one that allows to register a user   
+•  one that allows to update a user
+•  one that allows to create a user  
 •  one that delete a user   
 
 
